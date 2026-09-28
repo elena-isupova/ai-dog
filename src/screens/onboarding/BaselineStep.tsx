@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { OnboardingData, BaselineOption } from '../../types';
 import { clsx } from 'clsx';
 
@@ -22,7 +21,7 @@ const BASELINE_OPTIONS: { value: BaselineOption; label: string; description: str
 ];
 
 export function BaselineStep({ data, onChange, onBack }: BaselineStepProps) {
-  const [showDistress, setShowDistress] = useState(!!data.hasShownDistress);
+  const showDistress = data.hasShownDistress;
 
   return (
     <div className="space-y-7">
@@ -41,8 +40,9 @@ export function BaselineStep({ data, onChange, onBack }: BaselineStepProps) {
             key={option.value}
             type="button"
             onClick={() => onChange({ baselineOption: option.value })}
+            aria-pressed={data.baselineOption === option.value}
             className={clsx(
-              'w-full p-5 text-left rounded-[var(--radius-xl)] border-2 transition-all',
+              'w-full p-3.5 text-left rounded-[var(--radius-xl)] border-2 transition-all',
               data.baselineOption === option.value
                 ? 'border-[var(--accent)] bg-[var(--accent-subtle)]'
                 : 'border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-subtle)]'
@@ -53,7 +53,7 @@ export function BaselineStep({ data, onChange, onBack }: BaselineStepProps) {
                 <p className={clsx('font-medium', data.baselineOption === option.value ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]')}>
                   {option.label}
                 </p>
-                <p className="text-body-sm text-[var(--text-muted)] mt-1">{option.description}</p>
+                <p className="text-body-sm text-[var(--text-muted)] mt-0.5">{option.description}</p>
               </div>
               {data.baselineOption === option.value && (
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="text-[var(--accent)]">
@@ -70,19 +70,18 @@ export function BaselineStep({ data, onChange, onBack }: BaselineStepProps) {
         <p className="text-caption text-[var(--text-muted)] mb-4">
           Has your dog shown distress when left alone?
         </p>
-        <div className="space-y-2">
-          {['No', 'Yes', 'Not sure'].map(label => (
+        <div className="grid grid-cols-2 gap-2">
+          {[{ label: 'No', value: false }, { label: 'Yes', value: true }].map(({ label, value }) => (
             <button
               key={label}
               type="button"
               onClick={() => {
-                const value = label === 'Yes';
                 onChange({ hasShownDistress: value });
-                setShowDistress(value);
               }}
+              aria-pressed={data.hasShownDistress === value}
               className={clsx(
-                'w-full p-5 text-left rounded-[var(--radius-xl)] border-2 transition-all',
-                data.hasShownDistress === (label === 'Yes')
+                'w-full p-3.5 text-left rounded-[var(--radius-lg)] border-2 transition-all',
+                data.hasShownDistress === value
                   ? 'border-[var(--accent)] bg-[var(--accent-subtle)]'
                   : 'border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-subtle)]'
               )}

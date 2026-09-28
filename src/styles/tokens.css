@@ -14,26 +14,26 @@
   /* Text colors - warm charcoal, never pure black */
   --text-primary: #1a1816;
   --text-secondary: #5a5652;
-  --text-muted: #8a8580;
+  --text-muted: #716c66;
   --text-inverse: #faf8f5;
 
   /* Accent - sophisticated terracotta */
-  --accent: #c47b3d;
-  --accent-hover: #b06d36;
-  --accent-pressed: #9c5f30;
+  --accent: #965626;
+  --accent-hover: #854b22;
+  --accent-pressed: #71401d;
   --accent-subtle: #f5ebe3;
   --accent-muted: #e8d4bc;
 
   /* Semantic - restrained, not loud */
-  --success: #6b8e5c;
+  --success: #527447;
   --success-subtle: #e8f0e4;
   --success-muted: #b8d4a8;
 
-  --warning: #c49a2e;
+  --warning: #835f10;
   --warning-subtle: #f5ebd8;
   --warning-muted: #e8d4a8;
 
-  --distress: #a85c4a;
+  --distress: #98503e;
   --distress-subtle: #f3e8e5;
   --distress-muted: #d4a898;
 
@@ -43,8 +43,8 @@
   --divider: #eeebe5;
 
   /* Focus - visible but calm */
-  --focus: #c47b3d;
-  --focus-ring: rgba(196, 123, 61, 0.25);
+  --focus: #965626;
+  --focus-ring: rgba(150, 86, 38, 0.22);
 
   /* Overlays */
   --overlay-scrim: rgba(26, 24, 22, 0.35);
@@ -92,9 +92,9 @@
 
   /* === TYPOGRAPHY === */
   /* Font families */
-  --font-display: "Fraunces", "Georgia", serif;        /* Headlines - editorial serif */
-  --font-body: "IBM Plex Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;  /* UI text */
-  --font-mono: "IBM Plex Mono", "SF Mono", "JetBrains Mono", monospace;  /* Timer, data */
+  --font-display: "Newsreader", "Georgia", serif;
+  --font-body: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "DM Mono", "SF Mono", monospace;
 
   /* Type scale - fluid, responsive */
   /* Display - for major headlines */
@@ -441,6 +441,43 @@ body {
   padding: 0 var(--gutter);
 }
 
+.tab-bar {
+  position: fixed;
+  z-index: var(--z-sticky);
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 50%;
+  right: auto;
+  display: flex;
+  width: min(480px, calc(100% - 24px));
+  justify-content: space-around;
+  padding: 6px 8px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-floating);
+  backdrop-filter: blur(16px);
+}
+
+.tab-item {
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.tab-item .text-caption {
+  color: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.training-screen .training-end-button {
+  width: 96px;
+  height: 96px;
+  min-height: 96px;
+  border-radius: 50%;
+}
+
 /* === FLEX UTILITIES === */
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
@@ -468,7 +505,7 @@ body {
   border: none;
 }
 
-/* === TOUCH TARGET ===
+/* === TOUCH TARGET === */
 .touch-target {
   min-height: var(--touch-target);
   min-width: var(--touch-target);

@@ -22,7 +22,7 @@ export function WelcomeStep({ isFirstStep }: WelcomeStepProps) {
       </div>
 
       <div className="space-y-3 md:space-y-4">
-        <h1 className="mx-auto max-w-[880px] text-[clamp(2.75rem,4vw,5.5rem)] leading-[0.92] tracking-[-0.06em] text-[var(--text-primary)]">
+          <h1 className="mx-auto max-w-[880px] text-[clamp(2.5rem,5vw,4rem)] leading-[0.98] tracking-[-0.05em] text-[var(--text-primary)]">
           Help your dog feel safe alone
         </h1>
         <p className="mx-auto max-w-[820px] text-[1rem] leading-[1.55] text-[var(--text-secondary)] md:text-[1.2rem]">

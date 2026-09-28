@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import type { OnboardingData, TrainingWindow } from '../../types';
-import { Input } from '../../components/ui';
+import { Input, Toggle } from '../../components/ui';
+import { formatDuration } from '../../utils/helpers';
+import { selectInitialDuration } from '../../engine/trainingEngine';
+import { DEFAULT_ENGINE_CONFIG } from '../../types';
 import { clsx } from 'clsx';
 
 interface ScheduleStepProps {
@@ -29,7 +32,7 @@ const DEFAULT_WINDOW: TrainingWindow = {
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 };
 
-export function ScheduleStep({ data, onChange, onBack }: ScheduleStepProps) {
+export function ScheduleStep({ data, onChange }: ScheduleStepProps) {
   const [window, setWindow] = useState<TrainingWindow>(data.trainingWindow || DEFAULT_WINDOW);
 
   const toggleDay = (day: number) => {
@@ -49,16 +52,16 @@ export function ScheduleStep({ data, onChange, onBack }: ScheduleStepProps) {
     <div className="space-y-7">
       <div className="mb-2 text-center">
         <h1 className="text-display text-[var(--text-primary)] leading-tight">
-          When are you usually away?
+          Make room for small steps
         </h1>
         <p className="mt-2 text-body text-[var(--text-secondary)]">
-          We'll suggest practices during this window. You can adjust anytime.
+          Choose a gentle practice window. You can change it whenever life does.
         </p>
       </div>
 
       {/* Days of week */}
       <div className="space-y-3">
-        <label className="block text-caption text-[var(--text-secondary)] mb-3">Days</label>
+          <label className="block text-caption text-[var(--text-secondary)] mb-3">Practice days</label>
         <div className="flex gap-2" role="group" aria-label="Training days">
           {DAYS.map(day => (
             <button
@@ -66,7 +69,7 @@ export function ScheduleStep({ data, onChange, onBack }: ScheduleStepProps) {
               type="button"
               onClick={() => toggleDay(day.value)}
               className={clsx(
-                'flex-1 py-4 px-2 rounded-[var(--radius-lg)] text-caption font-medium transition-all',
+                'flex-1 min-w-0 py-3 px-1 rounded-[var(--radius-lg)] text-caption font-medium transition-all',
                 window.daysOfWeek.includes(day.value)
                   ? 'bg-[var(--accent)] text-[var(--text-inverse)]'
                   : 'bg-[var(--bg-subtle)] text-[var(--text-secondary)] hover:bg-[var(--border)]'
@@ -99,23 +102,28 @@ export function ScheduleStep({ data, onChange, onBack }: ScheduleStepProps) {
           onChange={(e) => handleTimeChange('endTime', e.target.value)}
         />
       </div>
-
-      {/* Timezone */}
-      <div className="pt-4 border-t border-[var(--divider)]">
-        <label className="block text-caption text-[var(--text-secondary)] mb-2">Timezone</label>
-        <p className="text-body text-[var(--text-primary)]">{window.timezone}</p>
-        <p className="text-body-sm text-[var(--text-muted)] mt-1">
-          Detected automatically. Updates when you travel.
+      {window.startTime >= window.endTime && (
+        <p className="-mt-4 text-body-sm text-[var(--distress)]" role="alert">
+          End time must be later than start time.
         </p>
+      )}
+
+      <div className="rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--bg-elevated)] p-4">
+        <Toggle
+          label="Practice reminders"
+          description="A gentle nudge when it's time to train"
+          checked={data.notificationsEnabled}
+          onChange={(notificationsEnabled) => onChange({ notificationsEnabled })}
+        />
       </div>
 
-      {/* Preview */}
-      <div className="p-5 bg-[var(--bg-subtle)] rounded-[var(--radius-xl)]">
-        <p className="text-caption text-[var(--text-muted)] mb-1">Preview</p>
-        <p className="text-body text-[var(--text-primary)]">
-          {window.daysOfWeek.length > 0
-            ? `Practices ${window.daysOfWeek.map(d => DAYS.find(d2 => d2.value === d)?.short).join(', ')} ${window.startTime}–${window.endTime}`
-            : 'Select days to see schedule'}
+      <div className="rounded-[var(--radius-xl)] bg-[var(--accent-subtle)] p-5">
+        <p className="text-caption text-[var(--accent)]">Your starting plan</p>
+        <p className="mt-1 text-body font-medium text-[var(--text-primary)]">
+          {data.name || 'Your dog'} begins with {formatDuration(selectInitialDuration(data.baselineOption, data.hasShownDistress, DEFAULT_ENGINE_CONFIG))} alone.
+        </p>
+        <p className="mt-1 text-body-sm text-[var(--text-secondary)]">
+          We'll only add time when they are comfortable.
         </p>
       </div>
     </div>

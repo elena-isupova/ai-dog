@@ -9,6 +9,7 @@ import {
   TrainingSchedule,
   ScheduledSlot,
   SessionOutcome,
+  SessionOutcomeInput,
   OnboardingData,
   OnboardingStep,
   TrainingWindow,
@@ -99,7 +100,7 @@ type Action =
   | { type: 'UPDATE_ONBOARDING_DATA'; payload: Partial<OnboardingData> }
   | { type: 'START_SESSION'; payload: { slot: ScheduledSlot; plannedDuration: number } }
   | { type: 'END_SESSION_EARLY'; payload: { actualDuration: number; reason: 'distress_observed' | 'owner_concern' | 'interruption'; observations: string[] } }
-  | { type: 'COMPLETE_SESSION'; payload: Omit<SessionOutcome, 'timestamp'> }
+  | { type: 'COMPLETE_SESSION'; payload: { outcome: SessionOutcomeInput; notes?: string } }
   | { type: 'SKIP_SESSION'; payload: { reason: 'snoozed' | 'later_today' | 'skip_today' | 'notification_ignored' | 'busy' } }
   | { type: 'SNOOZE_SESSION'; payload: { minutes: number } }
   | { type: 'REFRESH_SCHEDULE' }
@@ -285,11 +286,11 @@ function appReducer(state: AppState, action: Action): AppState {
       if (!state.currentSession) return state;
       
       const outcome = {
-        ...action.payload,
+        ...action.payload.outcome,
         timestamp: new Date(),
       } as unknown as SessionOutcome;
 
-      return processSessionEnd(state, outcome);
+      return processSessionEnd(state, outcome, action.payload.notes);
     }
 
     case 'SKIP_SESSION': {
@@ -418,7 +419,7 @@ function appReducer(state: AppState, action: Action): AppState {
 // HELPER: Process session end
 // ============================================
 
-function processSessionEnd(state: AppState, outcome: SessionOutcome): AppState {
+function processSessionEnd(state: AppState, outcome: SessionOutcome, notes?: string): AppState {
   if (!state.dog || !state.trainingLevel || !state.settings || !state.currentSession) {
     return state;
   }
@@ -431,6 +432,7 @@ function processSessionEnd(state: AppState, outcome: SessionOutcome): AppState {
     ...state.currentSession,
     actualDuration,
     outcome,
+    notes: notes?.trim() || undefined,
     createdAt: now,
   };
   saveSession(completedSession);
@@ -569,7 +571,7 @@ const AppContext = createContext<{
     completeOnboarding: (data: OnboardingData) => void;
     startSession: (slot: ScheduledSlot) => void;
     endSessionEarly: (actualDuration: number, reason: 'distress_observed' | 'owner_concern' | 'interruption', observations: string[]) => void;
-    completeSession: (outcome: Omit<SessionOutcome, 'timestamp'>) => void;
+    completeSession: (outcome: SessionOutcomeInput, notes?: string) => void;
     skipSession: (reason: 'snoozed' | 'later_today' | 'skip_today' | 'notification_ignored' | 'busy') => void;
     snoozeSession: (minutes: number) => void;
     handleInvitationResponse: (response: InvitationResponse, slot: ScheduledSlot) => ScheduledSlot | null;
@@ -629,8 +631,8 @@ export function AppProvider({ children }: AppProviderProps) {
     endSessionEarly: useCallback((actualDuration: number, reason: 'distress_observed' | 'owner_concern' | 'interruption', observations: string[]) => 
       dispatch({ type: 'END_SESSION_EARLY', payload: { actualDuration, reason, observations } }), []),
 
-    completeSession: useCallback((outcome: Omit<SessionOutcome, 'timestamp'>) => 
-      dispatch({ type: 'COMPLETE_SESSION', payload: outcome }), []),
+    completeSession: useCallback((outcome: SessionOutcomeInput, notes?: string) =>
+      dispatch({ type: 'COMPLETE_SESSION', payload: { outcome, notes } }), []),
 
     skipSession: useCallback((reason: 'snoozed' | 'later_today' | 'skip_today' | 'notification_ignored' | 'busy') => 
       dispatch({ type: 'SKIP_SESSION', payload: { reason } }), []),

@@ -21,8 +21,8 @@ const BREEDS = [
 ];
 
 export function DogProfileStep({ data, onChange, onBack }: DogProfileStepProps) {
-  const [ageYears, setAgeYears] = useState(data.ageYears || 1);
-  const [ageMonths, setAgeMonths] = useState(data.ageMonths || 0);
+  const [ageYears, setAgeYears] = useState(data.ageYears ?? 1);
+  const [ageMonths, setAgeMonths] = useState(data.ageMonths ?? 0);
 
   const handleAgeChange = (field: 'years' | 'months', value: number) => {
     if (field === 'years') {

@@ -96,6 +96,7 @@ export function Modal({
           'shadow-[var(--shadow-modal)] animate-modal-enter',
           sizes[size]
         )}
+        style={{ zIndex: 'calc(var(--z-modal) + 1)' }}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? 'modal-title' : undefined}

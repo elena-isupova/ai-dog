@@ -131,6 +131,7 @@ export function getSessions(): TrainingSession[] {
 
 export function saveSession(session: TrainingSession): void {
   const sessions = getSessions();
+  if (sessions.some(existing => existing.id === session.id)) return;
   sessions.unshift(session); // Most recent first
   // Keep last 1000 sessions
   if (sessions.length > 1000) sessions.length = 1000;

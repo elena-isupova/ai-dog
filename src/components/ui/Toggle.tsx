@@ -24,7 +24,7 @@ export const Toggle = forwardRef<HTMLInputElement, ToggleProps>(
             id={toggleId}
             checked={checked}
             onChange={handleChange}
-            className="peer h-7 w-13 appearance-none bg-[var(--border)] rounded-full transition-colors duration-[var(--duration-base)]
+            className="peer h-7 w-[52px] appearance-none bg-[var(--border)] rounded-full transition-colors duration-[var(--duration-base)]
               checked:bg-[var(--accent)]
               focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2
               disabled:opacity-40 disabled:cursor-not-allowed"

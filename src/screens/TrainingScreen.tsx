@@ -1,16 +1,15 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Square, Video, VideoOff, CheckCircle, X, AlertTriangle, Sun, Moon, Star } from 'lucide-react';
+import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
+import { Square, Video, VideoOff, CheckCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Button, Modal, ProgressRing, BottomSheet, Chip } from '../components/ui';
 import { clsx, formatDuration, formatDurationShort } from '../utils/helpers';
-import type { TrainingLevel, TrainingSession, SessionOutcome, GreenObservation, YellowObservation, RedObservation, EarlyTerminationReason } from '../types';
+import { classifyEarlyTermination } from '../engine/trainingEngine';
+import type { SessionOutcome, SessionOutcomeInput, GreenObservation, YellowObservation, RedObservation } from '../types';
 
-type TrainingRoute = 'active' | 'complete' | 'feedback';
+type TrainingRoute = 'active' | 'complete' | 'feedback' | 'saved';
 
 export function TrainingScreen() {
-  const { state, actions } = useApp();
-  const navigate = useNavigate();
   const params = useParams();
   const route = (params['*'] as TrainingRoute) || 'active';
 
@@ -21,6 +20,8 @@ export function TrainingScreen() {
       return <SessionCompleteScreen />;
     case 'feedback':
       return <SessionFeedbackScreen />;
+    case 'saved':
+      return <SessionSavedScreen />;
     default:
       return <ActiveTrainingScreen />;
   }
@@ -31,7 +32,7 @@ export function TrainingScreen() {
 // ============================================
 
 function ActiveTrainingScreen() {
-  const { state, actions } = useApp();
+  const { state } = useApp();
   const navigate = useNavigate();
   const [elapsed, setElapsed] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
@@ -39,14 +40,37 @@ function ActiveTrainingScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const [ambientPhase, setAmbientPhase] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<Date | null>(null);
   const wasRunningBeforeBackground = useRef(false);
   const ambientIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const plannedDuration = state.trainingLevel?.nextTargetDuration || 30;
+  const ringSize = viewportHeight < 720 ? 192 : 240;
   const progress = Math.min(100, (elapsed / plannedDuration) * 100);
   const remaining = Math.max(0, plannedDuration - elapsed);
+
+  const startSession = useCallback(() => {
+    setIsRunning(true);
+    if (!state.currentSession) {
+      navigate('/');
+    }
+  }, [state.currentSession, navigate]);
+
+  const completeSession = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setIsRunning(false);
+    navigate('/training/complete', {
+      state: { plannedDuration, actualDuration: plannedDuration, endedEarly: false },
+    });
+  }, [plannedDuration, navigate]);
+
+  useEffect(() => {
+    const updateViewportHeight = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', updateViewportHeight);
+    return () => window.removeEventListener('resize', updateViewportHeight);
+  }, []);
 
   // Handle app backgrounding - pause timer when app goes to background
   useEffect(() => {
@@ -81,6 +105,7 @@ function ActiveTrainingScreen() {
       startTimeRef.current = state.currentSession.actualStart;
       const alreadyElapsed = Math.floor((Date.now() - startTimeRef.current.getTime()) / 1000);
       setElapsed(alreadyElapsed);
+      setCountdown(0);
       setIsRunning(true);
     } else {
       // Pre-start countdown
@@ -97,21 +122,14 @@ function ActiveTrainingScreen() {
       }, 1000);
       return () => clearInterval(countdownInterval);
     }
-  }, []);
+  }, [startSession, state.currentSession]);
 
   // Timer tick
   useEffect(() => {
     if (!isRunning) return;
     
     intervalRef.current = setInterval(() => {
-      setElapsed(e => {
-        const newElapsed = e + 1;
-        if (newElapsed >= plannedDuration) {
-          completeSession();
-          return plannedDuration;
-        }
-        return newElapsed;
-      });
+      setElapsed(e => Math.min(plannedDuration, e + 1));
     }, 1000);
 
     return () => {
@@ -119,23 +137,9 @@ function ActiveTrainingScreen() {
     };
   }, [isRunning, plannedDuration]);
 
-  const startSession = useCallback(() => {
-    setIsRunning(true);
-    if (!state.currentSession) {
-      navigate('/');
-    }
-  }, [state.currentSession, navigate]);
-
-  const completeSession = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    setIsRunning(false);
-    actions.completeSession({
-      type: 'success',
-      actualDuration: plannedDuration,
-      observations: ['settled_quickly', 'ate_toy', 'rested_slept', 'calm_return', 'quiet'],
-    } as any);
-    navigate('/training/complete');
-  }, [actions, plannedDuration, navigate]);
+  useEffect(() => {
+    if (isRunning && elapsed >= plannedDuration) completeSession();
+  }, [completeSession, elapsed, isRunning, plannedDuration]);
 
   const handleEndEarly = useCallback(() => {
     setShowEndConfirm(true);
@@ -147,23 +151,16 @@ function ActiveTrainingScreen() {
     setShowEndConfirm(false);
     
     const actualDuration = elapsed;
-    const observations: (GreenObservation | YellowObservation | RedObservation)[] = [];
-    
-    let reason: EarlyTerminationReason = 'interruption';
-    if (progress >= 50) reason = 'owner_concern';
-    if (progress < 25) reason = 'distress_observed';
-    
-    actions.endSessionEarly(actualDuration, reason, observations);
-    navigate('/training/complete');
-  }, [actions, elapsed, progress, navigate]);
+    navigate('/training/complete', {
+      state: { plannedDuration, actualDuration, endedEarly: true },
+    });
+  }, [elapsed, plannedDuration, navigate]);
 
   const cancelEndEarly = useCallback(() => {
     setShowEndConfirm(false);
   }, []);
 
-  const toggleRecording = useCallback(() => {
-    setIsRecording(!isRecording);
-  }, []);
+  const toggleRecording = useCallback(() => setIsRecording(recording => !recording), []);
 
   return (
     <div className="training-screen min-h-screen bg-[var(--bg)] relative flex flex-col">
@@ -229,10 +226,13 @@ function ActiveTrainingScreen() {
             </div>
 
             {/* Timer Ring + Display */}
-            <div className="relative w-[280px] h-[280px] mx-auto mb-8 animate-scale-in">
+            <div
+              className="relative mx-auto mb-4 animate-scale-in"
+              style={{ width: ringSize, height: ringSize }}
+            >
               <ProgressRing
                 value={progress}
-                size={280}
+                size={ringSize}
                 strokeWidth={6}
                 variant="default"
                 showValue={false}
@@ -249,7 +249,7 @@ function ActiveTrainingScreen() {
         )}
 
         {/* Bottom Controls - Centered, thumb-friendly */}
-        <div className="fixed bottom-8 left-6 right-6 flex flex-col items-center gap-4 z-10 animate-slide-up">
+        <div className="fixed bottom-6 left-6 right-6 z-10 flex flex-col items-center gap-3 animate-slide-up">
           {/* Record Button - Left side */}
           <Button
             variant="secondary"
@@ -258,7 +258,9 @@ function ActiveTrainingScreen() {
             aria-label={isRecording ? 'Stop recording' : 'Record video'}
             aria-pressed={isRecording}
           >
-            <Video size={24} strokeWidth={2} className={clsx(isRecording && 'text-[var(--distress)] animate-timer-pulse')} />
+            {isRecording
+              ? <VideoOff size={24} strokeWidth={2} className="text-[var(--accent)]" />
+              : <Video size={24} strokeWidth={2} />}
           </Button>
 
           {/* End Early Button - Large, centered, thumb-friendly */}
@@ -267,20 +269,16 @@ function ActiveTrainingScreen() {
             size="lg"
             onClick={handleEndEarly}
             className={clsx(
-              'w-36 h-36 rounded-full',
+              'training-end-button h-24 w-24 rounded-full',
               'flex flex-col items-center justify-center gap-2',
-              'shadow-[var(--shadow-lg)] border border-[var(--border)]',
-              'animate-slide-up'
+              'shadow-[var(--shadow-lg)] border border-[var(--border)]'
             )}
             aria-label="End session early"
           >
-            <Square size={30} strokeWidth={2} className="text-[var(--text-secondary)]" />
-            <span className="text-body-sm text-[var(--text-secondary)]">End early</span>
-            <span className="text-data text-[var(--text-muted)]">{formatDurationShort(elapsed)}</span>
+            <Square size={24} strokeWidth={2} className="text-[var(--text-secondary)]" />
+            <span className="whitespace-nowrap text-[12px] leading-none text-[var(--text-secondary)]">End early</span>
+            <span className="text-[11px] leading-none text-[var(--text-muted)]">{formatDurationShort(elapsed)}</span>
           </Button>
-
-          {/* Spacer for symmetry */}
-          <div className="w-16 h-16" />
         </div>
 
         {/* End Early Confirmation Modal */}
@@ -306,52 +304,48 @@ function ActiveTrainingScreen() {
 // ============================================
 
 function SessionCompleteScreen() {
-  const { state, actions } = useApp();
+  const { state } = useApp();
   const navigate = useNavigate();
-  const [showCheckmark, setShowCheckmark] = useState(false);
-  const plannedDuration = state.currentSession?.plannedDuration || 30;
-  const actualDuration = state.currentSession?.actualDuration || plannedDuration;
-  const wasEarly = actualDuration < plannedDuration;
-
-  useEffect(() => {
-    setShowCheckmark(true);
-    const timer = setTimeout(() => {
-      navigate('/training/feedback');
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [navigate]);
+  const location = useLocation();
+  const completion = location.state as {
+    plannedDuration?: number;
+    actualDuration?: number;
+    endedEarly?: boolean;
+  } | null;
+  const plannedDuration = completion?.plannedDuration ?? state.currentSession?.plannedDuration ?? 30;
+  const actualDuration = completion?.actualDuration ?? plannedDuration;
+  const wasEarly = completion?.endedEarly ?? actualDuration < plannedDuration;
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-[var(--bg)]">
-      <div className="text-center animate-fade-in">
+      <div className="w-full max-w-sm text-center animate-fade-in">
         <div className={clsx(
-          'w-24 h-24 mx-auto mb-6 bg-[var(--success-subtle)] rounded-full flex items-center justify-center',
-          showCheckmark ? 'animate-scale-in' : 'opacity-0 scale-90'
+          'w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center',
+          wasEarly ? 'bg-[var(--accent-subtle)]' : 'bg-[var(--success-subtle)]'
         )}>
           <CheckCircle size={48} strokeWidth={1.5} className="text-[var(--success)]" />
         </div>
 
-        <h1 className="text-display text-[var(--text-primary)] mb-3 leading-tight">
-          {wasEarly 
-            ? `Practice complete`
-            : `Practice complete`}
+        <h1 className="text-h1 text-[var(--text-primary)] mb-3 leading-tight">
+          {wasEarly ? 'You ended the practice early' : 'Practice timer complete'}
         </h1>
-
-        {wasEarly && (
-          <p className="text-body text-[var(--text-secondary)] mt-2">
-            You completed {formatDuration(actualDuration)} of {formatDuration(plannedDuration)}
-          </p>
-        )}
-
-        {!wasEarly && (
-          <p className="text-body-lg text-[var(--text-secondary)] mt-4">
-            {state.dog?.name} settled quickly. Nice work.
-          </p>
-        )}
-
-        <p className="text-caption text-[var(--text-muted)] mt-8">
-          Continuing to feedback…
+        <p className="text-body text-[var(--text-secondary)] mt-2">
+          {wasEarly
+            ? `${formatDuration(actualDuration)} practiced, with ${state.dog?.name}'s comfort first.`
+            : `${state.dog?.name} stayed with the plan for ${formatDuration(actualDuration)}.`}
         </p>
+        <div className="mt-8 space-y-3">
+          <Button
+            size="lg"
+            className="w-full"
+            onClick={() => navigate('/training/feedback', { state: completion })}
+          >
+            Log how it went
+          </Button>
+          <p className="text-body-sm text-[var(--text-muted)]">
+            Your notes shape the next practice.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -394,6 +388,12 @@ const RED_OBSERVATIONS: { id: RedObservation; label: string }[] = [
 function SessionFeedbackScreen() {
   const { state, actions } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
+  const completion = location.state as {
+    plannedDuration?: number;
+    actualDuration?: number;
+    endedEarly?: boolean;
+  } | null;
   const [greenSelected, setGreenSelected] = useState<Set<GreenObservation>>(new Set());
   const [yellowSelected, setYellowSelected] = useState<Set<YellowObservation>>(new Set());
   const [redSelected, setRedSelected] = useState<RedObservation | null>(null);
@@ -450,10 +450,21 @@ function SessionFeedbackScreen() {
     setShowValidationError(false);
     setIsSaving(true);
 
-    const actualDuration = state.currentSession?.actualDuration || state.trainingLevel?.nextTargetDuration || 30;
+    const actualDuration = completion?.actualDuration ?? state.currentSession?.actualDuration ?? state.trainingLevel?.nextTargetDuration ?? 30;
+    const plannedDuration = completion?.plannedDuration ?? state.currentSession?.plannedDuration ?? state.trainingLevel?.nextTargetDuration ?? 30;
 
     let outcome: SessionOutcome;
-    if (redSelected) {
+    if (completion?.endedEarly) {
+      const observations = [...yellowSelected, ...(redSelected ? [redSelected] : [])];
+      outcome = {
+        type: 'early_termination',
+        plannedDuration,
+        actualDuration,
+        reason: classifyEarlyTermination(plannedDuration, actualDuration, observations),
+        observations,
+        timestamp: new Date(),
+      };
+    } else if (redSelected) {
       outcome = {
         type: 'significant_distress',
         actualDuration,
@@ -476,20 +487,28 @@ function SessionFeedbackScreen() {
       } as any;
     }
 
-    actions.completeSession(outcome);
+    actions.completeSession(outcome, note);
     setIsSaving(false);
-    navigate('/');
-  }, [actions, greenSelected, hasAnySelection, navigate, note, redSelected, state, yellowSelected]);
+    navigate('/training/saved', {
+      state: { outcome, actualDuration, plannedDuration },
+    });
+  }, [actions, completion, greenSelected, hasAnySelection, navigate, note, redSelected, state, yellowSelected]);
 
   const handleSkip = useCallback(() => {
-    const actualDuration = state.currentSession?.actualDuration || state.trainingLevel?.nextTargetDuration || 30;
-    actions.completeSession({
-      type: 'success',
-      actualDuration,
-      observations: [],
-    } as any);
-    navigate('/');
-  }, [actions, navigate, state]);
+    const actualDuration = completion?.actualDuration ?? state.currentSession?.actualDuration ?? state.trainingLevel?.nextTargetDuration ?? 30;
+    const plannedDuration = completion?.plannedDuration ?? state.currentSession?.plannedDuration ?? state.trainingLevel?.nextTargetDuration ?? 30;
+    const outcome: SessionOutcomeInput = completion?.endedEarly
+      ? {
+          type: 'early_termination',
+          plannedDuration,
+          actualDuration,
+          reason: classifyEarlyTermination(plannedDuration, actualDuration, []),
+          observations: [],
+        }
+      : { type: 'success', actualDuration, observations: [] };
+    actions.completeSession(outcome);
+    navigate('/training/saved', { state: { outcome, actualDuration, plannedDuration } });
+  }, [actions, completion, navigate, state]);
 
   return (
     <BottomSheet
@@ -582,9 +601,9 @@ function SessionFeedbackScreen() {
         {/* Actions */}
         <div className="flex gap-3 pt-2 border-t border-[var(--divider)]">
           <Button variant="ghost" size="lg" className="flex-1" onClick={handleSkip} disabled={isSaving}>
-            Skip feedback
+            Finish without notes
           </Button>
-          <Button variant="primary" size="lg" className="flex-1" onClick={handleSave} disabled={isSaving || !hasAnySelection}>
+          <Button variant="primary" size="lg" className="flex-1" onClick={handleSave} disabled={isSaving || (!hasAnySelection && !note.trim())}>
             {isSaving ? 'Saving…' : 'Save session'}
           </Button>
         </div>
@@ -611,5 +630,56 @@ function SessionFeedbackScreen() {
         </Modal>
       </div>
     </BottomSheet>
+  );
+}
+
+function SessionSavedScreen() {
+  const { state } = useApp();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const result = location.state as { outcome?: SessionOutcome; actualDuration?: number } | null;
+  const outcome = result?.outcome;
+  const title = outcome?.type === 'significant_distress'
+    ? 'You noticed what mattered'
+    : outcome?.type === 'mild_difficulty'
+      ? 'A useful step, even on a hard day'
+      : outcome?.type === 'early_termination'
+        ? 'You put comfort first'
+        : 'A calm step forward';
+  const message = outcome?.type === 'significant_distress'
+    ? 'We’ll pause progression and keep the next practice gentle.'
+    : outcome?.type === 'mild_difficulty'
+      ? 'We’ll stay close to this duration while confidence grows.'
+      : outcome?.type === 'early_termination'
+        ? 'This practice is recorded. There is no need to push through discomfort.'
+        : `${state.dog?.name ?? 'Your dog'} practiced for ${formatDuration(result?.actualDuration ?? 0)}. Small, comfortable steps add up.`;
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--bg)] px-6 py-10">
+      <div className="w-full max-w-sm text-center animate-fade-in">
+        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[var(--success-subtle)] text-[var(--success)]">
+          <CheckCircle size={42} strokeWidth={1.7} />
+        </div>
+        <p className="text-caption text-[var(--accent)]">Practice saved</p>
+        <h1 className="mt-2 text-h1 text-[var(--text-primary)]">{title}</h1>
+        <p className="mt-3 text-body text-[var(--text-secondary)]">{message}</p>
+
+        <div className="mt-7 rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--bg-elevated)] p-5 text-left">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-body-sm text-[var(--text-secondary)]">Next gentle target</span>
+            <span className="text-data text-[var(--accent)]">
+              {formatDuration(state.trainingLevel?.nextTargetDuration ?? 30)}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-7 space-y-3">
+          <Button size="lg" className="w-full" onClick={() => navigate('/')}>Back home</Button>
+          <Link to="/history" className="inline-flex min-h-11 items-center justify-center text-body-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+            View practice history
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }

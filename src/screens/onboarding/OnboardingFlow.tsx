@@ -1,25 +1,20 @@
 import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import type { OnboardingStep, OnboardingData, BaselineOption } from '../../types';
+import type { OnboardingStep, OnboardingData } from '../../types';
 import { WelcomeStep } from './WelcomeStep';
 import { DogProfileStep } from './DogProfileStep';
 import { BaselineStep } from './BaselineStep';
 import { ScheduleStep } from './ScheduleStep';
-import { NotificationsStep } from './NotificationsStep';
-import { PreviewStep } from './PreviewStep';
-import { CelebrationStep } from './CelebrationStep';
 import { Button } from '../../components/ui';
 import { Stepper } from '../../components/ui/Progress';
 import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
 
 const STEPS: { id: OnboardingStep; label: string }[] = [
-  { id: 'welcome', label: 'Welcome' },
-  { id: 'dog-profile', label: 'Your dog' },
+  { id: 'welcome', label: 'Start' },
+  { id: 'dog-profile', label: 'Dog' },
   { id: 'baseline', label: 'Baseline' },
-  { id: 'schedule', label: 'Schedule' },
-  { id: 'notifications', label: 'Reminders' },
-  { id: 'preview', label: 'Preview' },
+  { id: 'schedule', label: 'Plan' },
 ];
 
 const createDefaultOnboardingData = (): OnboardingData => ({
@@ -44,7 +39,6 @@ const createDefaultOnboardingData = (): OnboardingData => ({
 
 export function OnboardingFlow() {
   const { state, actions } = useApp();
-  const navigate = useNavigate();
   const [localData, setLocalData] = useState<OnboardingData>(() => ({
     ...createDefaultOnboardingData(),
     ...(state.onboardingData as Partial<OnboardingData>),
@@ -89,11 +83,8 @@ export function OnboardingFlow() {
       case 'baseline':
         return !!localData.baselineOption;
       case 'schedule':
-        return (localData.trainingWindow?.daysOfWeek?.length ?? 0) > 0;
-      case 'notifications':
-        return true;
-      case 'preview':
-        return true;
+        return (localData.trainingWindow?.daysOfWeek?.length ?? 0) > 0
+          && localData.trainingWindow.startTime < localData.trainingWindow.endTime;
       default:
         return false;
     }
@@ -118,19 +109,15 @@ export function OnboardingFlow() {
         return <BaselineStep {...stepProps} />;
       case 'schedule':
         return <ScheduleStep {...stepProps} />;
-      case 'notifications':
-        return <NotificationsStep {...stepProps} />;
-      case 'preview':
-        return <PreviewStep {...stepProps} />;
       default:
         return null;
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--bg)] text-[var(--text-primary)]">
+    <div className="h-[100dvh] min-h-[100dvh] flex flex-col overflow-hidden bg-[var(--bg)] text-[var(--text-primary)]">
       <div className="px-4 py-4 md:px-6 md:py-5 border-b border-[var(--divider)]">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-[760px] mx-auto">
           <Stepper
             steps={STEPS.map(s => s.label)}
             currentStep={currentStepIndex}
@@ -138,14 +125,14 @@ export function OnboardingFlow() {
         </div>
       </div>
 
-      <main className="flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
+      <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
         <div className="mx-auto w-full max-w-[760px] animate-fade-in">
           {renderStep()}
         </div>
       </main>
 
       <div className="px-4 pb-6 pt-3 md:px-6 md:pb-8 border-t border-[var(--divider)] bg-[var(--bg)]">
-        <div className="max-w-5xl mx-auto flex gap-3">
+        <div className="max-w-[760px] mx-auto flex gap-3">
           {currentStepIndex > 0 && (
             <Button
               variant="ghost"

@@ -121,6 +121,9 @@ export type SessionOutcome =
   | EarlyTerminationOutcome 
   | SkippedOutcome;
 
+type WithoutOutcomeTimestamp<T> = T extends { timestamp: Date } ? Omit<T, 'timestamp'> : never;
+export type SessionOutcomeInput = WithoutOutcomeTimestamp<SessionOutcome>;
+
 export interface TrainingLevel {
   currentMaxDuration: number;
   nextTargetDuration: number;
@@ -171,6 +174,7 @@ export interface TrainingSession {
   plannedDuration: number;
   actualDuration: number;
   outcome: SessionOutcome;
+  notes?: string;
   enrichmentUsed?: string;
   exitDoor?: string;
   preDepartureCues?: string[];
@@ -370,8 +374,6 @@ export type OnboardingStep =
   | 'dog-profile'
   | 'baseline'
   | 'schedule'
-  | 'notifications'
-  | 'preview'
   | 'celebration'
   | 'complete';
 

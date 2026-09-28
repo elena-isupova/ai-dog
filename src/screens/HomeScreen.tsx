@@ -1,28 +1,17 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Settings, HelpCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Button, Card, ProgressLinear, BottomSheet } from '../components/ui';
-import { clsx, formatDuration, formatTime, getTimeOfDay } from '../utils/helpers';
-import type { TrainingSchedule, ScheduledSlot } from '../types';
-import { checkPauseRecovery, computeNextTargetDuration } from '../engine/trainingEngine';
+import { formatDuration, formatTime, getTimeOfDay } from '../utils/helpers';
+import type { TrainingSchedule, ScheduledSlot, TrainingSession } from '../types';
 
 export function HomeScreen() {
   const { state, actions } = useApp();
+  const navigate = useNavigate();
   const [now, setNow] = useState(new Date());
   const [invitationSlot, setInvitationSlot] = useState<ScheduledSlot | null>(null);
   const [showInvitation, setShowInvitation] = useState(false);
-
-  // Check pause recovery on mount and when training level changes
-  useEffect(() => {
-    if (state.trainingLevel && state.settings) {
-      const recovered = checkPauseRecovery(state.trainingLevel, new Date());
-      if (recovered !== state.trainingLevel) {
-        const computed = computeNextTargetDuration(recovered, new Date(), state.settings!.engine);
-        actions.refreshSchedule();
-      }
-    }
-  }, [state.trainingLevel, state.settings, actions]);
 
   // Update clock every minute (not every second - saves battery)
   useEffect(() => {
@@ -48,6 +37,7 @@ export function HomeScreen() {
     if (invitationSlot) {
       actions.startSession(invitationSlot);
       setShowInvitation(false);
+      navigate('/training/active');
     }
   };
 
@@ -81,7 +71,7 @@ export function HomeScreen() {
   };
 
   const handleStartPracticeNow = () => {
-    if (state.trainingLevel && state.todaySchedule) {
+    if (state.trainingLevel) {
       const immediateSlot: ScheduledSlot = {
         id: `immediate-${Date.now()}`,
         startTime: new Date(),
@@ -91,22 +81,23 @@ export function HomeScreen() {
         status: 'available',
       };
       actions.startSession(immediateSlot);
+      navigate('/training/active');
     }
   };
 
-  if (!state.dog || !state.trainingLevel) {
-    return <OnboardingRedirect />;
-  }
-
   const nextSlot = useMemo(() => getNextUpcomingSlot(state.todaySchedule, now), [state.todaySchedule, now]);
-  const progressStats = useMemo(() => calculateProgressStats(state.trainingProgress), [state.trainingProgress]);
-  const timeOfDay = getTimeOfDay(now);
-  const greeting = getGreeting(timeOfDay, state.dog.name);
-  const contextualMessage = getContextualMessage(timeOfDay, state.trainingLevel, state.dog.name);
+  const progressStats = useMemo(
+    () => calculateProgressStats(state.trainingProgress, state.sessions),
+    [state.trainingProgress, state.sessions]
+  );
 
   if (!state.dog || !state.trainingLevel) {
     return <OnboardingRedirect />;
   }
+
+  const timeOfDay = getTimeOfDay(now);
+  const greeting = getGreeting(timeOfDay);
+  const contextualMessage = getContextualMessage(state.trainingLevel, state.dog.name);
 
   return (
     <div className="min-h-screen pb-[calc(var(--tab-bar-height)+env(safe-area-inset-bottom))] bg-[var(--bg)]">
@@ -130,7 +121,7 @@ export function HomeScreen() {
             <Link to="/settings" className="touch-target-sm p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] rounded-[var(--radius-md)]" aria-label="Settings">
               <Settings size={20} strokeWidth={2} />
             </Link>
-            <Link to="/settings?tab=help" className="touch-target-sm p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] rounded-[var(--radius-md)]" aria-label="Help">
+            <Link to="/settings?tab=professional" className="touch-target-sm p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-subtle)] rounded-[var(--radius-md)]" aria-label="Professional support">
               <HelpCircle size={20} strokeWidth={2} />
             </Link>
           </div>
@@ -369,24 +360,31 @@ function getNextUpcomingSlot(schedule: TrainingSchedule | null, now: Date): Sche
     .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())[0] || null;
 }
 
-function calculateProgressStats(progress: any) {
+function calculateProgressStats(progress: any, sessions: TrainingSession[]) {
   if (!progress) {
     return { thisWeek: '0m', currentMax: '0s', consistency: 0, daysActive: 0 };
   }
   
-  const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const thisWeekMinutes = Math.floor(progress.totalSessions * 2);
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recentWeek = sessions.filter(session =>
+    new Date(session.actualStart).getTime() >= weekAgo && session.outcome.type !== 'skipped'
+  );
+  const activeDays = new Set(
+    sessions
+      .filter(session => session.outcome.type !== 'skipped')
+      .map(session => new Date(session.actualStart).toDateString())
+  ).size;
+  const thisWeekDuration = recentWeek.reduce((total, session) => total + session.actualDuration, 0);
   
   return {
-    thisWeek: `${thisWeekMinutes}m`,
+    thisWeek: formatDuration(thisWeekDuration),
     currentMax: formatDuration(progress.currentMaxDuration),
-    consistency: Math.min(100, (progress.totalSessions / 21) * 100),
-    daysActive: Math.min(21, progress.totalSessions),
+    consistency: Math.min(100, (activeDays / 21) * 100),
+    daysActive: Math.min(21, activeDays),
   };
 }
 
-function getGreeting(timeOfDay: 'morning' | 'afternoon' | 'evening', dogName: string): string {
+function getGreeting(timeOfDay: 'morning' | 'afternoon' | 'evening'): string {
   switch (timeOfDay) {
     case 'morning':
       return `Good morning`;
@@ -397,7 +395,7 @@ function getGreeting(timeOfDay: 'morning' | 'afternoon' | 'evening', dogName: st
   }
 }
 
-function getContextualMessage(timeOfDay: 'morning' | 'afternoon' | 'evening', trainingLevel: any, dogName: string): string {
+function getContextualMessage(trainingLevel: any, dogName: string): string {
   const maxDuration = trainingLevel.currentMaxDuration;
   const nextTarget = trainingLevel.nextTargetDuration;
   

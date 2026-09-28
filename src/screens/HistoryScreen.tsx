@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ChevronRight, Calendar, Filter } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, ChevronRight, Calendar, Filter } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Card, Chip, Button } from '../components/ui';
 import { clsx, formatDuration, formatDurationShort, formatDate, formatTime } from '../utils/helpers';
@@ -9,9 +9,8 @@ import type { TrainingSession } from '../types';
 export function HistoryScreen() {
   const { state } = useApp();
   const [filter, setFilter] = useState<'all' | 'success' | 'mild_difficulty' | 'significant_distress' | 'skipped'>('all');
-  const [dateRange, setDateRange] = useState<{ start: Date; end: Date } | null>(null);
 
-  const sessions = state.sessions || [];
+  const sessions = state.sessions;
 
   const filteredSessions = useMemo(() => {
     return sessions.filter(session => {
@@ -22,14 +21,9 @@ export function HistoryScreen() {
         if (filter === 'significant_distress' && outcome !== 'significant_distress') return false;
         if (filter === 'skipped' && outcome !== 'skipped') return false;
       }
-      if (dateRange) {
-        const sessionDate = new Date(session.actualStart);
-        sessionDate.setHours(0, 0, 0, 0);
-        if (sessionDate < dateRange.start || sessionDate > dateRange.end) return false;
-      }
       return true;
     });
-  }, [sessions, filter, dateRange]);
+  }, [sessions, filter]);
 
   const groupedSessions = useMemo(() => {
     const groups: Record<string, TrainingSession[]> = {};
@@ -50,7 +44,7 @@ export function HistoryScreen() {
       {/* Top Bar */}
       <header className="sticky top-0 z-40 flex items-center justify-between h-[var(--header-height)] bg-[var(--bg)]/80 backdrop-blur-sm border-b border-[var(--divider)]">
         <h1 className="text-h3 text-[var(--text-primary)]">History</h1>
-        <Button variant="ghost" size="icon" onClick={() => setFilter('all')}>
+        <Button variant="ghost" size="icon" aria-label="Clear filters" onClick={() => setFilter('all')}>
           <Filter size={22} strokeWidth={2} />
         </Button>
       </header>
@@ -80,7 +74,7 @@ export function HistoryScreen() {
 
         {/* Session list */}
         {Object.keys(groupedSessions).length === 0 ? (
-          <EmptyState />
+          <EmptyState isFiltered={filter !== 'all'} onClear={() => setFilter('all')} />
         ) : (
           <div className="space-y-7">
             {Object.entries(groupedSessions)
@@ -95,6 +89,97 @@ export function HistoryScreen() {
               ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+export function SessionDetailScreen() {
+  const { state } = useApp();
+  const { sessionId } = useParams();
+  const navigate = useNavigate();
+  const session = state.sessions.find(item => item.id === sessionId);
+
+  if (!session) {
+    return (
+      <div className="container py-10">
+        <Button variant="ghost" onClick={() => navigate('/history')}>
+          <ArrowLeft size={18} />
+          Back to history
+        </Button>
+        <div className="py-16 text-center">
+          <h1 className="text-h2 text-[var(--text-primary)]">Practice not found</h1>
+          <p className="mt-2 text-body text-[var(--text-secondary)]">It may have been removed from this device.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const { outcome } = session;
+  const observations = outcome.type === 'success'
+    || outcome.type === 'mild_difficulty'
+    || outcome.type === 'significant_distress'
+    || outcome.type === 'early_termination'
+    ? outcome.observations
+    : [];
+  const outcomeLabel = outcome.type === 'early_termination'
+    ? 'Ended early'
+    : outcome.type === 'significant_distress'
+      ? 'Distress observed'
+      : outcome.type === 'mild_difficulty'
+        ? 'Some difficulty'
+        : outcome.type === 'success'
+          ? 'Calm practice'
+          : 'Skipped';
+
+  return (
+    <div className="min-h-screen bg-[var(--bg)] pb-[calc(var(--tab-bar-height)+env(safe-area-inset-bottom))]">
+      <header className="sticky top-0 z-40 flex h-[var(--header-height)] items-center gap-3 border-b border-[var(--divider)] bg-[var(--bg)]/90 px-4 backdrop-blur-sm">
+        <Button variant="ghost" size="icon" aria-label="Back to history" onClick={() => navigate(-1)}>
+          <ArrowLeft size={20} />
+        </Button>
+        <h1 className="text-h3 text-[var(--text-primary)]">Practice details</h1>
+      </header>
+
+      <div className="container space-y-5 py-7">
+        <Card variant="outlined" padding="lg">
+          <p className="text-caption text-[var(--text-muted)]">{formatDate(new Date(session.actualStart))} · {formatTime(new Date(session.actualStart))}</p>
+          <h2 className="mt-2 text-h2 text-[var(--text-primary)]">{outcomeLabel}</h2>
+          <div className="mt-5 grid grid-cols-2 gap-4 border-t border-[var(--divider)] pt-4">
+            <div>
+              <p className="text-caption text-[var(--text-muted)]">Practiced</p>
+              <p className="mt-1 text-body font-medium text-[var(--text-primary)]">{formatDuration(session.actualDuration)}</p>
+            </div>
+            <div>
+              <p className="text-caption text-[var(--text-muted)]">Planned</p>
+              <p className="mt-1 text-body font-medium text-[var(--text-primary)]">{formatDuration(session.plannedDuration)}</p>
+            </div>
+          </div>
+        </Card>
+
+        {observations.length > 0 && (
+          <section className="space-y-3">
+            <h3 className="text-h3 text-[var(--text-primary)]">What you noticed</h3>
+            <div className="flex flex-wrap gap-2">
+              {observations.map((observation, index) => (
+                <ObservationBadge key={`${observation}-${index}`} tone={getObservationTone(outcome)}>
+                  {formatObservation(observation)}
+                </ObservationBadge>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {session.notes && (
+          <Card variant="outlined" padding="default">
+            <h3 className="text-body-sm font-medium text-[var(--text-primary)]">Your note</h3>
+            <p className="mt-2 whitespace-pre-wrap text-body-sm text-[var(--text-secondary)]">{session.notes}</p>
+          </Card>
+        )}
+
+        <Button variant="secondary" className="w-full" onClick={() => navigate('/history')}>
+          Back to history
+        </Button>
       </div>
     </div>
   );
@@ -151,27 +236,21 @@ function SessionCard({ session }: { session: TrainingSession }) {
               </span>
             </div>
 
-            <p className={clsx('text-capitalize text-body-sm mt-1.5', style.text)}>
-              {outcome.type.replace('_', ' ')}
+            <p className={clsx('text-body-sm mt-1.5', style.text)}>
+              {getOutcomeLabel(outcome.type)}
             </p>
 
             {observations.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {observations.slice(0, 3).map((obs, i) => (
-                  <Chip 
-                    key={`${obs}-${i}`} 
-                    variant={outcome.type === 'significant_distress' ? 'distress' : outcome.type === 'mild_difficulty' ? 'warning' : 'success'}
-                    size="sm"
-                    disabled
-                    className="px-2.5 py-1 text-[11px]"
-                  >
-                    {obs.replace('_', ' ')}
-                  </Chip>
+                  <ObservationBadge key={`${obs}-${i}`} tone={getObservationTone(outcome)}>
+                    {formatObservation(obs)}
+                  </ObservationBadge>
                 ))}
                 {observations.length > 3 && (
-                  <Chip variant="neutral" size="sm" disabled className="px-2.5 py-1 text-[11px]">
+                  <ObservationBadge tone="neutral">
                     +{observations.length - 3} more
-                  </Chip>
+                  </ObservationBadge>
                 )}
               </div>
             )}
@@ -199,16 +278,21 @@ function SessionCard({ session }: { session: TrainingSession }) {
   );
 }
 
-function EmptyState() {
+function EmptyState({ isFiltered, onClear }: { isFiltered: boolean; onClear: () => void }) {
   return (
     <div className="text-center py-12">
       <div className="w-16 h-16 mx-auto mb-4 bg-[var(--bg-subtle)] rounded-full flex items-center justify-center">
         <Calendar size={28} strokeWidth={1.5} className="text-[var(--text-muted)]" />
       </div>
-      <h3 className="text-h2 text-[var(--text-primary)] mb-2">No sessions yet</h3>
+      <h3 className="text-h2 text-[var(--text-primary)] mb-2">
+        {isFiltered ? 'No matching practices' : 'No sessions yet'}
+      </h3>
       <p className="text-body text-[var(--text-secondary)]">
-        Completed sessions will appear here.
+        {isFiltered ? 'Try another filter to see more of your history.' : 'Completed sessions will appear here.'}
       </p>
+      {isFiltered && (
+        <Button variant="secondary" className="mt-5" onClick={onClear}>Clear filters</Button>
+      )}
     </div>
   );
 }
@@ -221,3 +305,42 @@ function LoadingState() {
   );
 }
 
+function getOutcomeLabel(type: TrainingSession['outcome']['type']) {
+  switch (type) {
+    case 'success': return 'Calm';
+    case 'mild_difficulty': return 'Some difficulty';
+    case 'significant_distress': return 'Distress observed';
+    case 'early_termination': return 'Ended early';
+    case 'skipped': return 'Skipped';
+  }
+}
+
+function formatObservation(observation: string) {
+  const label = observation.replaceAll('_', ' ');
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function getObservationTone(outcome: TrainingSession['outcome']) {
+  return outcome.type === 'significant_distress'
+    || (outcome.type === 'early_termination' && outcome.reason === 'distress_observed')
+    ? 'distress'
+    : outcome.type === 'mild_difficulty'
+      || (outcome.type === 'early_termination' && outcome.reason === 'owner_concern')
+      ? 'warning'
+      : 'success';
+}
+
+function ObservationBadge({ children, tone }: { children: React.ReactNode; tone: 'success' | 'warning' | 'distress' | 'neutral' }) {
+  const tones = {
+    success: 'border-[var(--success-muted)] bg-[var(--success-subtle)] text-[var(--success)]',
+    warning: 'border-[var(--warning-muted)] bg-[var(--warning-subtle)] text-[var(--warning)]',
+    distress: 'border-[var(--distress-muted)] bg-[var(--distress-subtle)] text-[var(--distress)]',
+    neutral: 'border-[var(--border)] bg-[var(--bg-subtle)] text-[var(--text-secondary)]',
+  };
+
+  return (
+    <span className={clsx('inline-flex items-center rounded-[var(--radius-md)] border px-2.5 py-1 text-[11px] font-medium', tones[tone])}>
+      {children}
+    </span>
+  );
+}

@@ -1,16 +1,15 @@
-import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { Download, ChevronRight, Flag, Star } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Clock3, Download, Flag, Star } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Card, ProgressLinear, Button } from '../components/ui';
 import { clsx, formatDuration, formatDate } from '../utils/helpers';
-import type { Milestone } from '../types';
+import type { ExportData } from '../types';
 
 const MILESTONES = [30, 60, 120, 180, 300, 600, 900, 1800, 2400, 3600, 5400];
 
-function generateChartData(sessions: any[], progress: any) {
+function generateChartData(sessions: any[]) {
   const data = [];
-  const now = new Date();
   
   for (let i = 29; i >= 0; i--) {
     const date = new Date();
@@ -34,20 +33,31 @@ function generateChartData(sessions: any[], progress: any) {
 }
 
 export function ProgressScreen() {
-  const { state } = useApp();
+  const { state, actions } = useApp();
+  const navigate = useNavigate();
+  const [now, setNow] = useState(new Date());
+  const progress = state.trainingProgress;
+  const sessions = state.sessions;
+  const chartData = useMemo(() => generateChartData(sessions), [sessions]);
 
-  if (!state.dog || !state.trainingProgress) {
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!state.dog || !progress) {
     return <LoadingState />;
   }
 
-  const progress = state.trainingProgress;
-  const sessions = state.sessions || [];
   const maxDuration = progress.currentMaxDuration;
   const reachedMilestones = progress.milestones.map(m => m.duration);
   const nextMilestone = MILESTONES.find(m => !reachedMilestones.includes(m));
-
-  // Generate chart data from actual sessions (last 30 days)
-  const chartData = useMemo(() => generateChartData(sessions, progress), [sessions, progress]);
+  const consistencyCutoff = now.getTime() - 21 * 24 * 60 * 60 * 1000;
+  const activeDays = new Set(
+    sessions
+      .filter(session => session.outcome.type !== 'skipped' && new Date(session.actualStart).getTime() >= consistencyCutoff)
+      .map(session => new Date(session.actualStart).toDateString())
+  ).size;
 
   // Empty state for new users with no sessions yet
   if (progress.totalSessions === 0) {
@@ -57,7 +67,7 @@ export function ProgressScreen() {
           <h1 className="text-h3 text-[var(--text-primary)]">Progress</h1>
         </header>
         <div className="container py-12">
-          <EmptyProgressState />
+          <EmptyProgressState onStart={() => navigate('/')} />
         </div>
       </div>
     );
@@ -68,7 +78,7 @@ export function ProgressScreen() {
       {/* Top Bar */}
       <header className="sticky top-0 z-40 flex items-center justify-between h-[var(--header-height)] bg-[var(--bg)]/80 backdrop-blur-sm border-b border-[var(--divider)]">
         <h1 className="text-h3 text-[var(--text-primary)]">Progress</h1>
-        <Button variant="ghost" size="icon" onClick={() => exportData()}>
+        <Button variant="ghost" size="icon" aria-label="Export progress data" onClick={() => downloadData(actions.exportData())}>
           <Download size={22} strokeWidth={2} />
         </Button>
       </header>
@@ -153,20 +163,20 @@ export function ProgressScreen() {
               <p className="text-caption text-[var(--text-muted)] mt-1">Total sessions</p>
             </div>
             <div className="text-center p-5 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-[var(--radius-xl)]">
-              <p className="text-display text-[var(--accent)] tabular-nums">{Math.min(21, progress.totalSessions)}</p>
+              <p className="text-display text-[var(--accent)] tabular-nums">{activeDays}</p>
               <p className="text-caption text-[var(--text-muted)] mt-1">of 21 days</p>
             </div>
           </div>
-          <ProgressLinear value={Math.min(100, (progress.totalSessions / 21) * 100)} height={8} />
+          <ProgressLinear value={Math.min(100, (activeDays / 21) * 100)} height={8} />
           <p className="text-caption text-[var(--text-muted)] mt-2 text-center">
-            {Math.min(21, progress.totalSessions)} of last 21 days with practice
+            {activeDays} of last 21 days with practice
           </p>
         </section>
 
         {/* Session breakdown */}
         <section aria-labelledby="breakdown-heading">
           <h2 id="breakdown-heading" className="text-h2 text-[var(--text-primary)] mb-5">Session outcomes</h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <StatCard 
               label="Calm" 
               value={progress.successfulSessions} 
@@ -184,6 +194,12 @@ export function ProgressScreen() {
               value={progress.significantDistressSessions} 
               color="distress" 
               icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>} 
+            />
+            <StatCard
+              label="Ended early"
+              value={progress.earlyTerminationSessions}
+              color="warning"
+              icon={<Clock3 size={22} strokeWidth={2.2} />}
             />
           </div>
         </section>
@@ -348,7 +364,7 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
   );
 }
 
-function EmptyProgressState() {
+function EmptyProgressState({ onStart }: { onStart: () => void }) {
   return (
     <div className="text-center py-12">
       <div className="w-16 h-16 mx-auto mb-6 bg-[var(--bg-subtle)] rounded-full flex items-center justify-center">
@@ -365,6 +381,9 @@ function EmptyProgressState() {
       <p className="text-caption text-[var(--text-muted)]">
         Consistency builds confidence — one small step at a time.
       </p>
+      <Button size="lg" className="mt-7 w-full max-w-xs" onClick={onStart}>
+        Start a practice
+      </Button>
     </div>
   );
 }
@@ -377,7 +396,12 @@ function LoadingState() {
   );
 }
 
-function exportData() {
-  const { state, actions } = useApp();
-  actions.exportData();
+function downloadData(data: ExportData) {
+  const file = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'alone-together-training-data.json';
+  link.click();
+  URL.revokeObjectURL(url);
 }
